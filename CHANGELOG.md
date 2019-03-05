@@ -1,6 +1,8 @@
 ## Latest Changes
   * Allow usage of hostname for carla::Client and resolve them to IP address
   * Fixed python client DLL error on Windows
+  * Added playback speed (slow/fast motion) for the replayer
+  * We can use an absolute path for the recorded files (to choose where to 'write to' or 'read from')
 
 ## CARLA 0.9.4
 
