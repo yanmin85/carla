@@ -8,66 +8,74 @@ sudo: false
 matrix:
   include:
 
-    - env: TEST="Unit Tests"
-      addons:
-        apt:
-          sources:
-            - ubuntu-toolchain-r-test
-          packages:
-            - g++-7 # we need this one for the libstdc++.
-            - clang-6.0
-            - ninja-build
-            - python
-            - python-pip
-            - python3
-            - python3-pip
-            - libboost-python-dev
-            - libtiff5-dev
-            - libjpeg-dev
+    - env: TEST="Windows Build"
+      os: windows
       install:
-        - pip2 install -q --user setuptools nose2
-        - pip3 install -q --user setuptools
-        - pip3 install -q --user nose2
+        - choco install visualstudio2017-workload-vctools
+        - choco install make
       script:
-        - while sleep 2m; do echo "still building..."; done &
-        - make setup >> build.log 2>&1
-        - make LibCarla >> build.log 2>&1
-        - make PythonAPI >> build.log 2>&1
-        - kill %1
-        - make check ARGS="--all --gtest_args=--gtest_filter=-*_mt"
-      after_failure:
-        - tail --lines=2000 build.log
+        - ./Build.bat
 
-    - env: TEST="Pylint 2"
-      addons:
-        apt:
-          packages:
-            - python
-            - python-pip
-      install:
-        - pip2 install -q --user pylint
-        - pip2 install -q --user -r PythonAPI/requirements.txt
-      script:
-        - pylint --disable=R,C --rcfile=PythonAPI/.pylintrc PythonAPI/*.py PythonAPI/agents
+    # - env: TEST="Unit Tests"
+    #   addons:
+    #     apt:
+    #       sources:
+    #         - ubuntu-toolchain-r-test
+    #       packages:
+    #         - g++-7 # we need this one for the libstdc++.
+    #         - clang-6.0
+    #         - ninja-build
+    #         - python
+    #         - python-pip
+    #         - python3
+    #         - python3-pip
+    #         - libboost-python-dev
+    #         - libtiff5-dev
+    #         - libjpeg-dev
+    #   install:
+    #     - pip2 install -q --user setuptools nose2
+    #     - pip3 install -q --user setuptools
+    #     - pip3 install -q --user nose2
+    #   script:
+    #     - while sleep 2m; do echo "still building..."; done &
+    #     - make setup >> build.log 2>&1
+    #     - make LibCarla >> build.log 2>&1
+    #     - make PythonAPI >> build.log 2>&1
+    #     - kill %1
+    #     - make check ARGS="--all --gtest_args=--gtest_filter=-*_mt"
+    #   after_failure:
+    #     - tail --lines=2000 build.log
 
-    - env: TEST="Pylint 3"
-      addons:
-        apt:
-          packages:
-            - python3
-            - python3-pip
-      install:
-        - pip3 install -q --user setuptools
-        - pip3 install -q pylint
-        - pip3 install -q --user -r PythonAPI/requirements.txt
-      script:
-        - pylint --disable=R,C --rcfile=PythonAPI/.pylintrc PythonAPI/*.py PythonAPI/agents
+    # - env: TEST="Pylint 2"
+    #   addons:
+    #     apt:
+    #       packages:
+    #         - python
+    #         - python-pip
+    #   install:
+    #     - pip2 install -q --user pylint
+    #     - pip2 install -q --user -r PythonAPI/requirements.txt
+    #   script:
+    #     - pylint --disable=R,C --rcfile=PythonAPI/.pylintrc PythonAPI/*.py PythonAPI/agents
 
-    - env: TEST="MkDocs"
-      install:
-        - pip install -q --user mkdocs
-      script:
-        - mkdocs build --verbose --clean --strict --site-dir _site
+    # - env: TEST="Pylint 3"
+    #   addons:
+    #     apt:
+    #       packages:
+    #         - python3
+    #         - python3-pip
+    #   install:
+    #     - pip3 install -q --user setuptools
+    #     - pip3 install -q pylint
+    #     - pip3 install -q --user -r PythonAPI/requirements.txt
+    #   script:
+    #     - pylint --disable=R,C --rcfile=PythonAPI/.pylintrc PythonAPI/*.py PythonAPI/agents
+
+    # - env: TEST="MkDocs"
+    #   install:
+    #     - pip install -q --user mkdocs
+    #   script:
+    #     - mkdocs build --verbose --clean --strict --site-dir _site
 
 notifications:
   email: false
