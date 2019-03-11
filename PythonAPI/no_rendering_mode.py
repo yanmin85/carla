@@ -156,31 +156,28 @@ PIXELS_AHEAD_VEHICLE = 150
 class MapData(object):
   def __init__(self):
       # Static Data
-      self.map = []
-      self.stop_signals = []
+      self.map = dict()
+      self.waypoint_graph = dict()
+      self.stop_signals = dict()
 
       # Dynamic Data  
       self.hero_vehicle = []
-      self.vehicles = []
-      self.traffic_lights = []
-      self.speed_limits = []
-      self.walkers = []
+      self.vehicles = dict()
+      self.traffic_lights = dict()
+      self.speed_limits = dict()
+      self.walkers = dict()
 
   # Static data update functions
-  def set_map(self):
-      pass
-
   def set_stop_signals(self, stop_signals):
-      del map_data.stop_signals[:]
+      map_data.stop_signals.clear()
       for stop_signal in stop_signals:
           st = stop_signal.get_transform()
           stop_signal_dict = {
-              "id" : stop_signal.id,
               "position": [st.location.x, st.location.y, st.location.z],
               "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(stop_signal)]
           }
-          map_data.stop_signals.append(stop_signal_dict)
-    
+          map_data.stop_signals[stop_signal.id] = stop_signal_dict
+      
   # Dynamic data update functions
   def update_hero_vehicle(self, carla_map, hero, hero_transform):
       hero_waypoint = carla_map.get_waypoint(hero_transform.location)
@@ -192,47 +189,43 @@ class MapData(object):
       self.hero_vehicle = hero_vehicle_dict
   
   def update_vehicles(self, vehicles):
-      del map_data.vehicles[:]
+      map_data.vehicles.clear()
       for vehicle in vehicles:
           vehicle_dict = {
-              "id" : vehicle[0].id,
               "position": [vehicle[1].location.x, vehicle[1].location.y, vehicle[1].location.z],
               "orientation": [vehicle[1].rotation.yaw, vehicle[1].rotation.pitch, vehicle[1].rotation.roll],
               "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(vehicle[0], vehicle[1])]
           }
-          map_data.vehicles.append(vehicle_dict)
-  
+          map_data.vehicles[vehicle[0].id] = vehicle_dict
+
   def update_traffic_lights(self, traffic_lights):
-      del map_data.traffic_lights[:]
+      map_data.traffic_lights.clear()
       for traffic_light in traffic_lights:
           traffic_light_dict = {
-              "id" : traffic_light[0].id,
               "position": [traffic_light[1].location.x, traffic_light[1].location.y, traffic_light[1].location.z],
               "state": traffic_light[0].state,
               "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(traffic_light[0])]
           }
-          map_data.traffic_lights.append(traffic_light_dict)
+          map_data.traffic_lights[traffic_light[0].id] = traffic_light_dict
 
   def update_speed_limits(self, speed_limits):
-      del map_data.speed_limits[:]
+      map_data.speed_limits.clear()
       for speed_limit in speed_limits:
           speed_limit_dict = {
-              "id" : speed_limit[0].id,
               "position": [speed_limit[1].location.x, speed_limit[1].location.y, speed_limit[1].location.z],
               "speed": int(speed_limit[0].type_id.split('.')[2])
           }
-          map_data.speed_limits.append(speed_limit_dict)
+          map_data.speed_limits[speed_limit[0].id] = speed_limit_dict
   
   def update_walkers(self, walkers):
-      del map_data.walkers[:]
+      map_data.walkers.clear()
       for walker in walkers:
           walker_dict = {
-              "id" : walker[0].id,
               "position": [walker[1].location.x, walker[1].location.y, walker[1].location.z],
               "orientation": [walker[1].rotation.yaw, walker[1].rotation.pitch, walker[1].rotation.roll],
               "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(walker[0], walker[1])]
           }
-          map_data.walkers.append(walker_dict)
+          map_data.walkers[walker[0].id] = walker_dict
 
 # ==============================================================================
 # -- Util -----------------------------------------------------------
@@ -534,7 +527,7 @@ class MapImage(object):
 
     def draw_road_map(self, map_surface, carla_world, carla_map, world_to_pixel, world_to_pixel_width):
         map_surface.fill(COLOR_ALUMINIUM_4)
-        precision = 0.05
+        precision = 0.5
 
         def draw_lane_marking(surface, points, solid=True):
             if solid:
@@ -627,13 +620,20 @@ class MapImage(object):
 
         topology = [x[0] for x in carla_map.get_topology()]
         topology = sorted(topology, key=lambda w: w.transform.location.z)
-    
+        
+        # A road contains a list of lanes, a each lane contains a list of waypoints
+        map_data.map.clear()
+        waypoint_id = 0
         for waypoint in topology:
             waypoints = [waypoint]
+            setattr(waypoint, 'id', waypoint_id)
+            waypoint_id += 1
             nxt = waypoint.next(precision)[0]
             while nxt.road_id == waypoint.road_id:
+                setattr(nxt, 'id', waypoint_id)
                 waypoints.append(nxt)
                 nxt = nxt.next(precision)[0]
+                waypoint_id += 1
 
             left_marking = [lateral_shift(w.transform, -w.lane_width * 0.5) for w in waypoints]
             right_marking = [lateral_shift(w.transform, w.lane_width * 0.5) for w in waypoints]
@@ -643,6 +643,16 @@ class MapImage(object):
 
             pygame.draw.polygon(map_surface, COLOR_ALUMINIUM_5, polygon, 10)
             pygame.draw.polygon(map_surface, COLOR_ALUMINIUM_5, polygon)
+
+            lane = {
+              "waypoints": [[v.transform.location.x, v.transform.location.y, v.transform.location.z] for v in waypoints],
+              "left_marking": [[v.x, v.y, v.z] for v in left_marking],
+              "right_marking": [[v.x, v.y, v.z] for v in right_marking]
+            }
+
+            if map_data.map.get(waypoint.road_id) is None:
+                map_data.map[waypoint.road_id] = {}
+            map_data.map[waypoint.road_id][waypoint.lane_id] = lane
 
             if not waypoint.is_intersection:
                 sample = waypoints[int(len(waypoints) / 2)]
@@ -879,7 +889,8 @@ class ModuleWorld(object):
         vehicles, traffic_lights, speed_limits, walkers = self._split_actors()
 
         # Update MapData
-        map_data.update_hero_vehicle(self.town_map, self.hero_actor, self.hero_transform)
+        if self.hero_actor is not None:
+            map_data.update_hero_vehicle(self.town_map, self.hero_actor, self.hero_transform)
         map_data.update_vehicles(vehicles)
         map_data.update_traffic_lights(traffic_lights)
         map_data.update_speed_limits(speed_limits)
