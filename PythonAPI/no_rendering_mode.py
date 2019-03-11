@@ -156,8 +156,7 @@ PIXELS_AHEAD_VEHICLE = 150
 class MapData(object):
   def __init__(self):
       # Static Data
-      self.map = dict()
-      self.waypoint_graph = dict()
+      self.waypoints_graph = dict()
       self.stop_signals = dict()
 
       # Dynamic Data  
@@ -173,6 +172,7 @@ class MapData(object):
       for stop_signal in stop_signals:
           st = stop_signal.get_transform()
           stop_signal_dict = {
+              "id": stop_signal.id,
               "position": [st.location.x, st.location.y, st.location.z],
               "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(stop_signal)]
           }
@@ -192,8 +192,9 @@ class MapData(object):
       map_data.vehicles.clear()
       for vehicle in vehicles:
           vehicle_dict = {
+              "id": vehicle[0].id,
               "position": [vehicle[1].location.x, vehicle[1].location.y, vehicle[1].location.z],
-              "orientation": [vehicle[1].rotation.yaw, vehicle[1].rotation.pitch, vehicle[1].rotation.roll],
+              "orientation": [vehicle[1].rotation.roll, vehicle[1].rotation.pitch, vehicle[1].rotation.yaw],
               "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(vehicle[0], vehicle[1])]
           }
           map_data.vehicles[vehicle[0].id] = vehicle_dict
@@ -202,8 +203,9 @@ class MapData(object):
       map_data.traffic_lights.clear()
       for traffic_light in traffic_lights:
           traffic_light_dict = {
-              "position": [traffic_light[1].location.x, traffic_light[1].location.y, traffic_light[1].location.z],
+              "id": traffic_light[0].id,
               "state": traffic_light[0].state,
+              "position": [traffic_light[1].location.x, traffic_light[1].location.y, traffic_light[1].location.z],
               "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(traffic_light[0])]
           }
           map_data.traffic_lights[traffic_light[0].id] = traffic_light_dict
@@ -212,6 +214,7 @@ class MapData(object):
       map_data.speed_limits.clear()
       for speed_limit in speed_limits:
           speed_limit_dict = {
+              "id": speed_limit[0].id,
               "position": [speed_limit[1].location.x, speed_limit[1].location.y, speed_limit[1].location.z],
               "speed": int(speed_limit[0].type_id.split('.')[2])
           }
@@ -221,8 +224,9 @@ class MapData(object):
       map_data.walkers.clear()
       for walker in walkers:
           walker_dict = {
+              "id": walker[0].id,
               "position": [walker[1].location.x, walker[1].location.y, walker[1].location.z],
-              "orientation": [walker[1].rotation.yaw, walker[1].rotation.pitch, walker[1].rotation.roll],
+              "orientation": [walker[1].rotation.roll, walker[1].rotation.pitch, walker[1].rotation.yaw],
               "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(walker[0], walker[1])]
           }
           map_data.walkers[walker[0].id] = walker_dict
@@ -527,7 +531,7 @@ class MapImage(object):
 
     def draw_road_map(self, map_surface, carla_world, carla_map, world_to_pixel, world_to_pixel_width):
         map_surface.fill(COLOR_ALUMINIUM_4)
-        precision = 0.5
+        precision = 0.05
 
         def draw_lane_marking(surface, points, solid=True):
             if solid:
@@ -622,7 +626,7 @@ class MapImage(object):
         topology = sorted(topology, key=lambda w: w.transform.location.z)
         
         # A road contains a list of lanes, a each lane contains a list of waypoints
-        map_data.map.clear()
+        map_dict = dict()
         waypoint_id = 0
         for waypoint in topology:
             waypoints = [waypoint]
@@ -645,14 +649,14 @@ class MapImage(object):
             pygame.draw.polygon(map_surface, COLOR_ALUMINIUM_5, polygon)
 
             lane = {
-              "waypoints": [[v.transform.location.x, v.transform.location.y, v.transform.location.z] for v in waypoints],
-              "left_marking": [[v.x, v.y, v.z] for v in left_marking],
-              "right_marking": [[v.x, v.y, v.z] for v in right_marking]
+              "waypoints": waypoints,
+              "left_marking": left_marking,
+              "right_marking": right_marking
             }
 
-            if map_data.map.get(waypoint.road_id) is None:
-                map_data.map[waypoint.road_id] = {}
-            map_data.map[waypoint.road_id][waypoint.lane_id] = lane
+            if map_dict.get(waypoint.road_id) is None:
+                map_dict[waypoint.road_id] = {}
+            map_dict[waypoint.road_id][waypoint.lane_id] = lane
 
             if not waypoint.is_intersection:
                 sample = waypoints[int(len(waypoints) / 2)]
@@ -667,6 +671,45 @@ class MapImage(object):
                 for n, wp in enumerate(waypoints):
                     if (n % 400) == 0:
                         draw_arrow(map_surface, wp.transform)
+
+        for road_key in map_dict:
+            for lane_key in map_dict[road_key]:
+                # List of waypoints
+                lane = map_dict[road_key][lane_key]
+                
+                for i in range(0, len(lane["waypoints"])):
+                    next_ids = [w.id for w in lane["waypoints"][i+1:len(lane["waypoints"])]]
+                    pos = lane["waypoints"][i].transform.location
+                    
+                    # Get left and right lane keys
+                    left_lane_key = lane_key - 1 if lane_key - 1 != 0 else lane_key - 2
+                    right_lane_key = lane_key + 1 if lane_key + 1 != 0 else lane_key + 2
+                    
+                    # Get left and right waypoint ids only if they are valid
+                    left_lane_waypoint_id = -1
+                    if left_lane_key in map_dict[road_key]:
+                      left_lane_waypoint_id = map_dict[road_key][left_lane_key]["waypoints"][i].id
+                    
+                    right_lane_waypoint_id = -1
+                    if right_lane_key in map_dict[road_key]:
+                      right_lane_waypoint_id = map_dict[road_key][right_lane_key]["waypoints"][i].id
+
+                    # Get left and right margins (aka markings)
+                    lm = lane["left_marking"][i]
+                    rm = lane["right_marking"][i]
+
+                    # Waypoint dict
+                    waypoint_dict = {
+                        "road_id" : road_key,
+                        "lane_id" : lane_key,
+                        "position" : [pos.x, pos.y, pos.z],
+                        "left_margin_position": [lm.x, lm.y, lm.z],
+                        "right_margin_position": [rm.x,rm.y,rm.z],
+                        "next_waypoints_ids": next_ids,
+                        "left_lane_waypoint_id": left_lane_waypoint_id,
+                        "right_lane_waypoint_id": right_lane_waypoint_id
+                    }
+                    map_data.waypoints_graph[map_dict[road_key][lane_key]["waypoints"][i].id] = waypoint_dict
         
         actors = carla_world.get_actors()
         stops = [actor for actor in actors if 'stop' in actor.type_id]
