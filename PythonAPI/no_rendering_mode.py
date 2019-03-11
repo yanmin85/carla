@@ -698,11 +698,15 @@ class MapImage(object):
                     lm = lane["left_marking"][i]
                     rm = lane["right_marking"][i]
 
+                    # Waypoint Orientation
+                    wo = lane["waypoints"][i].transform.rotation
+                    
                     # Waypoint dict
                     waypoint_dict = {
                         "road_id" : road_key,
                         "lane_id" : lane_key,
                         "position" : [pos.x, pos.y, pos.z],
+                        "orientation": [wo.roll, wo.pitch, wo.yaw],
                         "left_margin_position": [lm.x, lm.y, lm.z],
                         "right_margin_position": [rm.x,rm.y,rm.z],
                         "next_waypoints_ids": next_ids,
