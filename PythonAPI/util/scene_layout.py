@@ -36,12 +36,6 @@ import random
 import time
 
 
-try:
-    import pygame
-except ImportError:
-    raise RuntimeError('cannot import pygame, make sure pygame package is installed')
-
-
 def get_scene_layout(world, carla_map):
 
     """
@@ -50,7 +44,7 @@ def get_scene_layout(world, carla_map):
     :param world: the world object from CARLA
     :return: a dictionary describing the scene.
     """
-    def lateral_shift(transform, shift):
+    def _lateral_shift(transform, shift):
         transform.rotation.yaw += 90
         return transform.location + shift * transform.get_forward_vector()
 
@@ -59,21 +53,16 @@ def get_scene_layout(world, carla_map):
     
     # A road contains a list of lanes, a each lane contains a list of waypoints
     map_dict = dict()
-    waypoint_id = 0
     precision = 0.05
     for waypoint in topology:
         waypoints = [waypoint]
-        setattr(waypoint, 'id', waypoint_id)
-        waypoint_id += 1
         nxt = waypoint.next(precision)[0]
         while nxt.road_id == waypoint.road_id:
-            setattr(nxt, 'id', waypoint_id)
             waypoints.append(nxt)
             nxt = nxt.next(precision)[0]
-            waypoint_id += 1
 
-        left_marking = [lateral_shift(w.transform, -w.lane_width * 0.5) for w in waypoints]
-        right_marking = [lateral_shift(w.transform, w.lane_width * 0.5) for w in waypoints]
+        left_marking = [_lateral_shift(w.transform, -w.lane_width * 0.5) for w in waypoints]
+        right_marking = [_lateral_shift(w.transform, w.lane_width * 0.5) for w in waypoints]
 
         lane = {
             "waypoints": waypoints,
@@ -95,7 +84,6 @@ def get_scene_layout(world, carla_map):
             
             for i in range(0, len(lane["waypoints"])):
                 next_ids = [w.id for w in lane["waypoints"][i+1:len(lane["waypoints"])]]
-                pos = lane["waypoints"][i].transform.location
                 
                 # Get left and right lane keys
                 left_lane_key = lane_key - 1 if lane_key - 1 != 0 else lane_key - 2
@@ -111,8 +99,11 @@ def get_scene_layout(world, carla_map):
                     right_lane_waypoint_id = map_dict[road_key][right_lane_key]["waypoints"][i].id
 
                 # Get left and right margins (aka markings)
-                lm = lane["left_marking"][i]
-                rm = lane["right_marking"][i]
+                lm = carla_map.transform_to_geolocation(lane["left_marking"][i])
+                rm = carla_map.transform_to_geolocation(lane["right_marking"][i])
+
+                # Waypoint Position
+                wl = carla_map.transform_to_geolocation(lane["waypoints"][i].transform.location)
 
                 # Waypoint Orientation
                 wo = lane["waypoints"][i].transform.rotation
@@ -121,10 +112,10 @@ def get_scene_layout(world, carla_map):
                 waypoint_dict = {
                     "road_id" : road_key,
                     "lane_id" : lane_key,
-                    "position" : [pos.x, pos.y, pos.z],
+                    "position": [wl.latitude, wl.longitude, wl.altitude],
                     "orientation": [wo.roll, wo.pitch, wo.yaw],
-                    "left_margin_position": [lm.x, lm.y, lm.z],
-                    "right_margin_position": [rm.x,rm.y,rm.z],
+                    "left_margin_position": [lm.latitude, lm.longitude, lm.altitude],
+                    "right_margin_position": [rm.latitude,rm.longitude,rm.altitude],
                     "next_waypoints_ids": next_ids,
                     "left_lane_waypoint_id": left_lane_waypoint_id,
                     "right_lane_waypoint_id": right_lane_waypoint_id
@@ -135,15 +126,16 @@ def get_scene_layout(world, carla_map):
 
 def get_dynamic_objects(carla_world, carla_map):
     # Private helper functions
-    def _get_bounding_box(actor, actor_transform):
+    def _get_bounding_box(actor):
         bb = actor.bounding_box.extent
         corners = [
             carla.Location(x=-bb.x, y=-bb.y),
             carla.Location(x=bb.x, y=-bb.y),
             carla.Location(x=bb.x, y=bb.y),
             carla.Location(x=-bb.x, y=bb.y)]
-
-        actor_transform.transform(corners)
+        t = actor.get_transform()
+        t.transform(corners)
+        corners = [carla_map.transform_to_geolocation(p) for p in corners]
         return corners
 
     def _get_trigger_volume(actor):
@@ -156,71 +148,81 @@ def get_dynamic_objects(carla_world, carla_map):
         corners = [x + actor.trigger_volume.location for x in corners]
         t = actor.get_transform()
         t.transform(corners)
+        corners = [carla_map.transform_to_geolocation(p) for p in corners]
         return corners
 
-    def _split_actors(actors_with_transforms):
+    def _split_actors(actors):
         vehicles = []
         traffic_lights = []
         speed_limits = []
         walkers = []
         stops = []
-        for actor_with_transform in actors_with_transforms:
-            actor = actor_with_transform[0]
+        for actor in actors:
             if 'vehicle' in actor.type_id:
-                vehicles.append(actor_with_transform)
+                vehicles.append(actor)
             elif 'traffic_light' in actor.type_id:
-                traffic_lights.append(actor_with_transform)
+                traffic_lights.append(actor)
             elif 'speed_limit' in actor.type_id:
-                speed_limits.append(actor_with_transform)
+                speed_limits.append(actor)
             elif 'walker' in actor.type_id:
-                walkers.append(actor_with_transform)
+                walkers.append(actor)
             elif 'stop' in actor.type_id:
-                stops.append(actor_with_transform)
+                stops.append(actor)
         return (vehicles, traffic_lights, speed_limits, walkers, stops)
 
     # Public functions
     def get_stop_signals(stops):
         stop_signals_dict = dict()
         for stop in stops:
+            st_transform = stop.get_transform()
+            location_gnss = carla_map.transform_to_geolocation(st_transform.location)
             st_dict = {
-                "id": stop[0].id,
-                "position": [stop[1].location.x, stop[1].location.y, stop[1].location.z],
-                "trigger_volume": [ [v.x,v.y,v.z] for v in _get_trigger_volume(stop[0])]
+                "id": stop.id,
+                "position": [location_gnss.latitude, location_gnss.longitude, location_gnss.altitude],
+                "trigger_volume": [ [v.longitude,v.latitude,v.altitude] for v in _get_trigger_volume(stop)]
             }
-            stop_signals_dict[stop[0].id] = st_dict
+            stop_signals_dict[stop.id] = st_dict
         return stop_signals_dict
 
     def get_traffic_lights(traffic_lights):
         traffic_lights_dict = dict()
         for traffic_light in traffic_lights:
+            tl_transform = traffic_light.get_transform()
+            location_gnss = carla_map.transform_to_geolocation(tl_transform.location)
             tl_dict = {
-                "id": traffic_light[0].id,
-                "state": traffic_light[0].state,
-                "position": [traffic_light[1].location.x, traffic_light[1].location.y, traffic_light[1].location.z],
-                "trigger_volume": [ [v.x,v.y,v.z] for v in _get_trigger_volume(traffic_light[0])]
+                "id": traffic_light.id,
+                "state": int(traffic_light.state),
+                "position": [location_gnss.latitude, location_gnss.longitude, location_gnss.altitude],
+                "trigger_volume": [ [v.longitude,v.latitude,v.altitude] for v in _get_trigger_volume(traffic_light)]
             }
-            traffic_lights_dict[traffic_light[0].id] = tl_dict
+            traffic_lights_dict[traffic_light.id] = tl_dict
         return traffic_lights_dict
   
     def get_vehicles(vehicles):
         vehicles_dict = dict()
         for vehicle in vehicles:
+            v_transform = vehicle.get_transform()
+            location_gnss = carla_map.transform_to_geolocation(v_transform.location)
             v_dict = {
-                "id": vehicle[0].id,
-                "position": [vehicle[1].location.x, vehicle[1].location.y, vehicle[1].location.z],
-                "orientation": [vehicle[1].rotation.roll, vehicle[1].rotation.pitch, vehicle[1].rotation.yaw],
-                "bounding_box": [ [v.x,v.y,v.z] for v in _get_bounding_box(vehicle[0], vehicle[1])]
+                "id": vehicle.id,
+                "position": [location_gnss.latitude, location_gnss.longitude, location_gnss.altitude],
+                "orientation": [v_transform.rotation.roll, v_transform.rotation.pitch, v_transform.rotation.yaw],
+                "bounding_box": [ [v.longitude,v.latitude,v.altitude] for v in _get_bounding_box(vehicle)]
             }
-            vehicles_dict[vehicle[0].id] = v_dict
+            vehicles_dict[vehicle.id] = v_dict
         return vehicles_dict
 
     def get_hero_vehicle(hero_vehicle):
         if hero_vehicle is None:
-          return hero_vehicle
+            return hero_vehicle
         
-        hero_waypoint = carla_map.get_waypoint(hero_vehicle[1].location)
+        hero_waypoint = carla_map.get_waypoint(hero_vehicle.get_location())
+        hero_transform = hero_vehicle.get_transform()
+        location_gnss = carla_map.transform_to_geolocation(hero_transform.location)
+
         hero_vehicle_dict = {
-            "id": hero_vehicle[0].id,
+            "id": hero_vehicle.id,
+            "position": [location_gnss.latitude, location_gnss.longitude, location_gnss.altitude],
             "road_id": hero_waypoint.road_id,
             "lane_id": hero_waypoint.lane_id
         }
@@ -229,40 +231,40 @@ def get_dynamic_objects(carla_world, carla_map):
     def get_walkers(walkers):
         walkers_dict = dict()
         for walker in walkers:
+            w_transform = walker.get_transform()
+            location_gnss = carla_map.transform_to_geolocation(w_transform.location)
             w_dict = {
-                "id": walker[0].id,
-                "position": [walker[1].location.x, walker[1].location.y, walker[1].location.z],
-                "orientation": [walker[1].rotation.roll, walker[1].rotation.pitch, walker[1].rotation.yaw],
-                "bounding_box": [ [v.x,v.y,v.z] for v in _get_bounding_box(walker[0], walker[1])]
+                "id": walker.id,
+                "position": [location_gnss.latitude, location_gnss.longitude, location_gnss.altitude],
+                "orientation": [w_transform.rotation.roll, w_transform.rotation.pitch, w_transform.rotation.yaw],
+                "bounding_box": [ [v.longitude,v.latitude,v.altitude] for v in _get_bounding_box(walker)]
             }
-            walkers_dict[walker[0].id] = w_dict
+            walkers_dict[walker.id] = w_dict
         return walkers_dict
 
     def get_speed_limits(speed_limits):
         speed_limits_dict = dict()
         for speed_limit in speed_limits:
+            sl_transform = speed_limit.get_transform()
+            location_gnss = carla_map.transform_to_geolocation(sl_transform.location)
             sl_dict = {
-                "id": speed_limit[0].id,
-                "position": [speed_limit[1].location.x, speed_limit[1].location.y, speed_limit[1].location.z],
-                "speed": int(speed_limit[0].type_id.split('.')[2])
+                "id": speed_limit.id,
+                "position": [location_gnss.latitude, location_gnss.longitude, location_gnss.altitude],
+                "speed": int(speed_limit.type_id.split('.')[2])
             }
-            speed_limits_dict[speed_limit[0].id] = sl_dict
+            speed_limits_dict[speed_limit.id] = sl_dict
         return speed_limits_dict
 
     
     actors = carla_world.get_actors()
-    actors_with_transforms = [(actor, actor.get_transform()) for actor in actors]
+    vehicles, traffic_lights, speed_limits, walkers, stops = _split_actors(actors)
 
-    vehicles, traffic_lights, speed_limits, walkers, stops = _split_actors(actors_with_transforms)
-    hero_vehicles = [vehicle for vehicle in vehicles if 'vehicle' in vehicle[0].type_id and vehicle[0].attributes['role_name'] == 'hero']
-    
-    hero_with_transform = None
-    if len(hero_vehicles) > 0:
-        hero_with_transform = random.choice(hero_vehicles)
-
+    hero_vehicles = [vehicle for vehicle in vehicles if 'vehicle' in vehicle.type_id and vehicle.attributes['role_name'] == 'hero']
+    hero = None if len(hero_vehicles) == 0 else random.choice(hero_vehicles)
+  
     return {
         'vehicles': get_vehicles(vehicles),
-        'hero_vehicle': get_hero_vehicle(hero_with_transform),
+        'hero_vehicle': get_hero_vehicle(hero),
         'walkers': get_walkers(walkers),
         'traffic_lights': get_traffic_lights(traffic_lights),
         'stop_signs': get_stop_signals(stops),
@@ -272,14 +274,15 @@ def get_dynamic_objects(carla_world, carla_map):
 
 
 # ==============================================================================
-# -- World ---------------------------------------------------------------------
+# -- TESTING Map Generation ---------------------------------------------------------------------
 # ==============================================================================
 
 
 class World(object):
     def __init__(self, host, port, timeout):
         self.world, self.town_map = self._get_data_from_carla(host, port, timeout)
-
+        # print(get_scene_layout(self.world, self.town_map))
+    
     def _get_data_from_carla(self, host, port, timeout):
         try:
             self.client = carla.Client(host, port)
@@ -294,8 +297,9 @@ class World(object):
 
    
         
-    def tick(self, clock):
-        get_dynamic_objects(self.world, self.town_map)
+    def tick(self):
+      # print(get_dynamic_objects(self.world, self.town_map))
+      pass
 # ==============================================================================
 # -- main() --------------------------------------------------------------------
 # ==============================================================================
@@ -336,17 +340,13 @@ def main():
     logging.basicConfig(format='%(levelname)s: %(message)s', level=log_level)
     logging.info('listening to server %s:%s', args.host, args.port)
 
-    pygame.init()
-
     client = carla.Client(args.host, args.port)
     client.set_timeout(2.0)
 
     world = World(args.host, args.port, 2.0)
 
-    clock = pygame.time.Clock()
     while True:
-        clock.tick_busy_loop(60)
-        world.tick(clock)
+        world.tick()
 
     print(__doc__)
     
