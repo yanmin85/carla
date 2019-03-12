@@ -42,39 +42,6 @@ except ImportError:
     raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
 
-# ==============================================================================
-# -- Util -----------------------------------------------------------
-# ==============================================================================
-
-
-class Util(object):
-
-    @staticmethod
-    def get_bounding_box(actor, actor_transform):
-        bb = actor.bounding_box.extent
-        corners = [
-            carla.Location(x=-bb.x, y=-bb.y),
-            carla.Location(x=bb.x, y=-bb.y),
-            carla.Location(x=bb.x, y=bb.y),
-            carla.Location(x=-bb.x, y=bb.y)]
-
-        actor_transform.transform(corners)
-        return corners
-
-    @staticmethod
-    def get_trigger_volume(actor):
-        bb = actor.trigger_volume.extent
-        corners = [carla.Location(x=-bb.x, y=-bb.y),
-                  carla.Location(x=bb.x, y=-bb.y),
-                  carla.Location(x=bb.x, y=bb.y),
-                  carla.Location(x=-bb.x, y=bb.y),
-                  carla.Location(x=-bb.x, y=-bb.y)]
-        corners = [x + actor.trigger_volume.location for x in corners]
-        t = actor.get_transform()
-        t.transform(corners)
-        return corners
-
-
 def get_scene_layout(world, carla_map):
 
     """
@@ -109,9 +76,9 @@ def get_scene_layout(world, carla_map):
         right_marking = [lateral_shift(w.transform, w.lane_width * 0.5) for w in waypoints]
 
         lane = {
-          "waypoints": waypoints,
-          "left_marking": left_marking,
-          "right_marking": right_marking
+            "waypoints": waypoints,
+            "left_marking": left_marking,
+            "right_marking": right_marking
         }
 
         if map_dict.get(waypoint.road_id) is None:
@@ -137,11 +104,11 @@ def get_scene_layout(world, carla_map):
                 # Get left and right waypoint ids only if they are valid
                 left_lane_waypoint_id = -1
                 if left_lane_key in map_dict[road_key]:
-                  left_lane_waypoint_id = map_dict[road_key][left_lane_key]["waypoints"][i].id
+                    left_lane_waypoint_id = map_dict[road_key][left_lane_key]["waypoints"][i].id
                 
                 right_lane_waypoint_id = -1
                 if right_lane_key in map_dict[road_key]:
-                  right_lane_waypoint_id = map_dict[road_key][right_lane_key]["waypoints"][i].id
+                    right_lane_waypoint_id = map_dict[road_key][right_lane_key]["waypoints"][i].id
 
                 # Get left and right margins (aka markings)
                 lm = lane["left_marking"][i]
@@ -167,12 +134,36 @@ def get_scene_layout(world, carla_map):
     return waypoints_graph
 
 def get_dynamic_objects(carla_world, carla_map):
+    # Private helper functions
+    def _get_bounding_box(actor, actor_transform):
+        bb = actor.bounding_box.extent
+        corners = [
+            carla.Location(x=-bb.x, y=-bb.y),
+            carla.Location(x=bb.x, y=-bb.y),
+            carla.Location(x=bb.x, y=bb.y),
+            carla.Location(x=-bb.x, y=bb.y)]
+
+        actor_transform.transform(corners)
+        return corners
+
+    def _get_trigger_volume(actor):
+        bb = actor.trigger_volume.extent
+        corners = [carla.Location(x=-bb.x, y=-bb.y),
+                  carla.Location(x=bb.x, y=-bb.y),
+                  carla.Location(x=bb.x, y=bb.y),
+                  carla.Location(x=-bb.x, y=bb.y),
+                  carla.Location(x=-bb.x, y=-bb.y)]
+        corners = [x + actor.trigger_volume.location for x in corners]
+        t = actor.get_transform()
+        t.transform(corners)
+        return corners
+
     def _split_actors(actors_with_transforms):
         vehicles = []
         traffic_lights = []
         speed_limits = []
         walkers = []
-
+        stops = []
         for actor_with_transform in actors_with_transforms:
             actor = actor_with_transform[0]
             if 'vehicle' in actor.type_id:
@@ -183,19 +174,20 @@ def get_dynamic_objects(carla_world, carla_map):
                 speed_limits.append(actor_with_transform)
             elif 'walker' in actor.type_id:
                 walkers.append(actor_with_transform)
+            elif 'stop' in actor.type_id:
+                stops.append(actor_with_transform)
+        return (vehicles, traffic_lights, speed_limits, walkers, stops)
 
-        return (vehicles, traffic_lights, speed_limits, walkers)
-
-    def get_stop_signals(stop_signals):
+    # Public functions
+    def get_stop_signals(stops):
         stop_signals_dict = dict()
-        for stop_signal in stop_signals:
-            st = stop_signal.get_transform()
+        for stop in stops:
             st_dict = {
-                "id": stop_signal.id,
-                "position": [st.location.x, st.location.y, st.location.z],
-                "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(stop_signal)]
+                "id": stop[0].id,
+                "position": [stop[1].location.x, stop[1].location.y, stop[1].location.z],
+                "trigger_volume": [ [v.x,v.y,v.z] for v in _get_trigger_volume(stop[0])]
             }
-            stop_signals_dict[stop_signal.id] = st_dict
+            stop_signals_dict[stop[0].id] = st_dict
         return stop_signals_dict
 
     def get_traffic_lights(traffic_lights):
@@ -205,7 +197,7 @@ def get_dynamic_objects(carla_world, carla_map):
                 "id": traffic_light[0].id,
                 "state": traffic_light[0].state,
                 "position": [traffic_light[1].location.x, traffic_light[1].location.y, traffic_light[1].location.z],
-                "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(traffic_light[0])]
+                "trigger_volume": [ [v.x,v.y,v.z] for v in _get_trigger_volume(traffic_light[0])]
             }
             traffic_lights_dict[traffic_light[0].id] = tl_dict
         return traffic_lights_dict
@@ -217,7 +209,7 @@ def get_dynamic_objects(carla_world, carla_map):
                 "id": vehicle[0].id,
                 "position": [vehicle[1].location.x, vehicle[1].location.y, vehicle[1].location.z],
                 "orientation": [vehicle[1].rotation.roll, vehicle[1].rotation.pitch, vehicle[1].rotation.yaw],
-                "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(vehicle[0], vehicle[1])]
+                "bounding_box": [ [v.x,v.y,v.z] for v in _get_bounding_box(vehicle[0], vehicle[1])]
             }
             vehicles_dict[vehicle[0].id] = v_dict
         return vehicles_dict
@@ -241,13 +233,12 @@ def get_dynamic_objects(carla_world, carla_map):
                 "id": walker[0].id,
                 "position": [walker[1].location.x, walker[1].location.y, walker[1].location.z],
                 "orientation": [walker[1].rotation.roll, walker[1].rotation.pitch, walker[1].rotation.yaw],
-                "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(walker[0], walker[1])]
+                "bounding_box": [ [v.x,v.y,v.z] for v in _get_bounding_box(walker[0], walker[1])]
             }
             walkers_dict[walker[0].id] = w_dict
         return walkers_dict
 
     def get_speed_limits(speed_limits):
-        
         speed_limits_dict = dict()
         for speed_limit in speed_limits:
             sl_dict = {
@@ -262,7 +253,7 @@ def get_dynamic_objects(carla_world, carla_map):
     actors = carla_world.get_actors()
     actors_with_transforms = [(actor, actor.get_transform()) for actor in actors]
 
-    vehicles, traffic_lights, speed_limits, walkers = _split_actors(actors_with_transforms)
+    vehicles, traffic_lights, speed_limits, walkers, stops = _split_actors(actors_with_transforms)
     hero_vehicles = [vehicle for vehicle in vehicles if 'vehicle' in vehicle[0].type_id and vehicle[0].attributes['role_name'] == 'hero']
     
     hero_with_transform = None
@@ -274,8 +265,8 @@ def get_dynamic_objects(carla_world, carla_map):
         'hero_vehicle': get_hero_vehicle(hero_with_transform),
         'walkers': get_walkers(walkers),
         'traffic_lights': get_traffic_lights(traffic_lights),
-        'stop_signs': get_stop_signals(stop_signals), # this should be static
-        'speed_limits': get_speed_limits(speed_limits) # this should be static
+        'stop_signs': get_stop_signals(stops),
+        'speed_limits': get_speed_limits(speed_limits)
     }
 
 
@@ -288,7 +279,6 @@ def get_dynamic_objects(carla_world, carla_map):
 class World(object):
     def __init__(self, host, port, timeout):
         self.world, self.town_map = self._get_data_from_carla(host, port, timeout)
-        get_scene_layout(self.world, self.town_map)
 
     def _get_data_from_carla(self, host, port, timeout):
         try:
