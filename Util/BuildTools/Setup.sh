@@ -281,6 +281,72 @@ fi
 unset GTEST_BASENAME
 
 # ==============================================================================
+# -- Get GBenchmark and compile it with libc++ ---------------------------------
+# ==============================================================================
+
+GBENCHMARK_BASENAME=googlebenchmark-1.4.1
+
+GBENCHMARK_LIBCXX_INCLUDE=${PWD}/${GBENCHMARK_BASENAME}-libcxx-install/include
+GBENCHMARK_LIBCXX_LIBPATH=${PWD}/${GBENCHMARK_BASENAME}-libcxx-install/lib
+GBENCHMARK_LIBSTDCXX_INCLUDE=${PWD}/${GBENCHMARK_BASENAME}-libstdcxx-install/include
+GBENCHMARK_LIBSTDCXX_LIBPATH=${PWD}/${GBENCHMARK_BASENAME}-libstdcxx-install/lib
+
+if [[ -d "${GBENCHMARK_BASENAME}-libcxx-install" && -d "${GBENCHMARK_BASENAME}-libstdcxx-install" ]] ; then
+  log "${GBENCHMARK_BASENAME} already installed."
+else
+  rm -Rf \
+      ${GBENCHMARK_BASENAME}-source \
+      ${GBENCHMARK_BASENAME}-libcxx-build ${GBENCHMARK_BASENAME}-libstdcxx-build \
+      ${GBENCHMARK_BASENAME}-libcxx-install ${GBENCHMARK_BASENAME}-libstdcxx-install
+
+  log "Retrieving Google Benchmark."
+
+  git clone --depth=1 -b v1.4.1 https://github.com/google/benchmark.git ${GBENCHMARK_BASENAME}-source
+
+  log "Building Google Benchmark with libc++."
+
+  mkdir -p ${GBENCHMARK_BASENAME}-libcxx-build
+
+  pushd ${GBENCHMARK_BASENAME}-libcxx-build >/dev/null
+
+  cmake -G "Ninja" \
+      -DCMAKE_CXX_FLAGS="-std=c++14 -stdlib=libc++ -I${LLVM_INCLUDE} -Wl,-L${LLVM_LIBPATH} -DBOOST_NO_EXCEPTIONS -fno-exceptions" \
+      -DBENCHMARK_ENABLE_GTEST_TESTS=OFF -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX="../${GBENCHMARK_BASENAME}-libcxx-install" \
+      -DCMAKE_CROSSCOMPILING=1 -DRUN_HAVE_STD_REGEX=1 -DRUN_HAVE_GNU_POSIX_REGEX=1 -DRUN_HAVE_POSIX_REGEX=0 -DRUN_HAVE_STEADY_CLOCK=1 \
+      ../${GBENCHMARK_BASENAME}-source
+
+  ninja
+
+  ninja install
+
+  popd >/dev/null
+
+  log "Building Google Benchmark with libstdc++."
+
+  mkdir -p ${GBENCHMARK_BASENAME}-libstdcxx-build
+
+  pushd ${GBENCHMARK_BASENAME}-libstdcxx-build >/dev/null
+
+  cmake -G "Ninja" \
+      -DCMAKE_CXX_FLAGS="-std=c++14" \
+      -DBENCHMARK_ENABLE_GTEST_TESTS=OFF -DCMAKE_BUILD_TYPE=Release \
+      -DCMAKE_INSTALL_PREFIX="../${GBENCHMARK_BASENAME}-libstdcxx-install" \
+      ../${GBENCHMARK_BASENAME}-source
+
+  ninja
+
+  ninja install
+
+  popd >/dev/null
+
+  rm -Rf ${GBENCHMARK_BASENAME}-source ${GBENCHMARK_BASENAME}-libcxx-build ${GBENCHMARK_BASENAME}-libstdcxx-build
+
+fi
+
+unset GBENCHMARK_BASENAME
+
+# ==============================================================================
 # -- Generate CMake toolchains and config --------------------------------------
 # ==============================================================================
 
@@ -347,12 +413,16 @@ if (CMAKE_BUILD_TYPE STREQUAL "Server")
   set(RPCLIB_LIB_PATH "${RPCLIB_LIBCXX_LIBPATH}")
   set(GTEST_INCLUDE_PATH "${GTEST_LIBCXX_INCLUDE}")
   set(GTEST_LIB_PATH "${GTEST_LIBCXX_LIBPATH}")
+  set(GBENCHMARK_INCLUDE_PATH "${GBENCHMARK_LIBCXX_INCLUDE}")
+  set(GBENCHMARK_LIB_PATH "${GBENCHMARK_LIBCXX_LIBPATH}")
 elseif (CMAKE_BUILD_TYPE STREQUAL "Client")
   # Here libraries linking libstdc++.
   set(RPCLIB_INCLUDE_PATH "${RPCLIB_LIBSTDCXX_INCLUDE}")
   set(RPCLIB_LIB_PATH "${RPCLIB_LIBSTDCXX_LIBPATH}")
   set(GTEST_INCLUDE_PATH "${GTEST_LIBSTDCXX_INCLUDE}")
   set(GTEST_LIB_PATH "${GTEST_LIBSTDCXX_LIBPATH}")
+  set(GBENCHMARK_INCLUDE_PATH "${GBENCHMARK_LIBSTDCXX_INCLUDE}")
+  set(GBENCHMARK_LIB_PATH "${GBENCHMARK_LIBSTDCXX_LIBPATH}")
   set(BOOST_LIB_PATH "${BOOST_LIBPATH}")
 endif ()
 
