@@ -148,89 +148,6 @@ HERO_DEFAULT_SCALE = 1.0
 
 PIXELS_AHEAD_VEHICLE = 150
 
-
-
-# ==============================================================================
-# -- MapData -------------------------------------------------------------------
-# ==============================================================================
-class MapData(object):
-  def __init__(self):
-      # Static Data
-      self.waypoints_graph = dict()
-      self.stop_signals = dict()
-
-      # Dynamic Data  
-      self.hero_vehicle = []
-      self.vehicles = dict()
-      self.traffic_lights = dict()
-      self.speed_limits = dict()
-      self.walkers = dict()
-
-  # Static data update functions
-  def set_stop_signals(self, stop_signals):
-      map_data.stop_signals.clear()
-      for stop_signal in stop_signals:
-          st = stop_signal.get_transform()
-          stop_signal_dict = {
-              "id": stop_signal.id,
-              "position": [st.location.x, st.location.y, st.location.z],
-              "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(stop_signal)]
-          }
-          map_data.stop_signals[stop_signal.id] = stop_signal_dict
-      
-  # Dynamic data update functions
-  def update_hero_vehicle(self, carla_map, hero, hero_transform):
-      hero_waypoint = carla_map.get_waypoint(hero_transform.location)
-      hero_vehicle_dict = {
-          "id": hero.id,
-          "road_id": hero_waypoint.road_id,
-          "lane_id": hero_waypoint.lane_id
-      }
-      self.hero_vehicle = hero_vehicle_dict
-  
-  def update_vehicles(self, vehicles):
-      map_data.vehicles.clear()
-      for vehicle in vehicles:
-          vehicle_dict = {
-              "id": vehicle[0].id,
-              "position": [vehicle[1].location.x, vehicle[1].location.y, vehicle[1].location.z],
-              "orientation": [vehicle[1].rotation.roll, vehicle[1].rotation.pitch, vehicle[1].rotation.yaw],
-              "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(vehicle[0], vehicle[1])]
-          }
-          map_data.vehicles[vehicle[0].id] = vehicle_dict
-
-  def update_traffic_lights(self, traffic_lights):
-      map_data.traffic_lights.clear()
-      for traffic_light in traffic_lights:
-          traffic_light_dict = {
-              "id": traffic_light[0].id,
-              "state": traffic_light[0].state,
-              "position": [traffic_light[1].location.x, traffic_light[1].location.y, traffic_light[1].location.z],
-              "trigger_volume": [ [v.x,v.y,v.z] for v in Util.get_trigger_volume(traffic_light[0])]
-          }
-          map_data.traffic_lights[traffic_light[0].id] = traffic_light_dict
-
-  def update_speed_limits(self, speed_limits):
-      map_data.speed_limits.clear()
-      for speed_limit in speed_limits:
-          speed_limit_dict = {
-              "id": speed_limit[0].id,
-              "position": [speed_limit[1].location.x, speed_limit[1].location.y, speed_limit[1].location.z],
-              "speed": int(speed_limit[0].type_id.split('.')[2])
-          }
-          map_data.speed_limits[speed_limit[0].id] = speed_limit_dict
-  
-  def update_walkers(self, walkers):
-      map_data.walkers.clear()
-      for walker in walkers:
-          walker_dict = {
-              "id": walker[0].id,
-              "position": [walker[1].location.x, walker[1].location.y, walker[1].location.z],
-              "orientation": [walker[1].rotation.roll, walker[1].rotation.pitch, walker[1].rotation.yaw],
-              "bounding_box": [ [v.x,v.y,v.z] for v in Util.get_bounding_box(walker[0], walker[1])]
-          }
-          map_data.walkers[walker[0].id] = walker_dict
-
 # ==============================================================================
 # -- Util -----------------------------------------------------------
 # ==============================================================================
@@ -316,7 +233,6 @@ class ModuleManager(object):
 # -- Global Objects ------------------------------------------------------------
 # ==============================================================================
 module_manager = ModuleManager()
-map_data = MapData()
 
 
 # ==============================================================================
@@ -626,18 +542,12 @@ class MapImage(object):
         topology = sorted(topology, key=lambda w: w.transform.location.z)
         
         # A road contains a list of lanes, a each lane contains a list of waypoints
-        map_dict = dict()
-        waypoint_id = 0
         for waypoint in topology:
             waypoints = [waypoint]
-            setattr(waypoint, 'id', waypoint_id)
-            waypoint_id += 1
             nxt = waypoint.next(precision)[0]
             while nxt.road_id == waypoint.road_id:
-                setattr(nxt, 'id', waypoint_id)
                 waypoints.append(nxt)
                 nxt = nxt.next(precision)[0]
-                waypoint_id += 1
 
             left_marking = [lateral_shift(w.transform, -w.lane_width * 0.5) for w in waypoints]
             right_marking = [lateral_shift(w.transform, w.lane_width * 0.5) for w in waypoints]
@@ -647,16 +557,6 @@ class MapImage(object):
 
             pygame.draw.polygon(map_surface, COLOR_ALUMINIUM_5, polygon, 10)
             pygame.draw.polygon(map_surface, COLOR_ALUMINIUM_5, polygon)
-
-            lane = {
-              "waypoints": waypoints,
-              "left_marking": left_marking,
-              "right_marking": right_marking
-            }
-
-            if map_dict.get(waypoint.road_id) is None:
-                map_dict[waypoint.road_id] = {}
-            map_dict[waypoint.road_id][waypoint.lane_id] = lane
 
             if not waypoint.is_intersection:
                 sample = waypoints[int(len(waypoints) / 2)]
@@ -671,49 +571,6 @@ class MapImage(object):
                 for n, wp in enumerate(waypoints):
                     if (n % 400) == 0:
                         draw_arrow(map_surface, wp.transform)
-
-        for road_key in map_dict:
-            for lane_key in map_dict[road_key]:
-                # List of waypoints
-                lane = map_dict[road_key][lane_key]
-                
-                for i in range(0, len(lane["waypoints"])):
-                    next_ids = [w.id for w in lane["waypoints"][i+1:len(lane["waypoints"])]]
-                    pos = lane["waypoints"][i].transform.location
-                    
-                    # Get left and right lane keys
-                    left_lane_key = lane_key - 1 if lane_key - 1 != 0 else lane_key - 2
-                    right_lane_key = lane_key + 1 if lane_key + 1 != 0 else lane_key + 2
-                    
-                    # Get left and right waypoint ids only if they are valid
-                    left_lane_waypoint_id = -1
-                    if left_lane_key in map_dict[road_key]:
-                      left_lane_waypoint_id = map_dict[road_key][left_lane_key]["waypoints"][i].id
-                    
-                    right_lane_waypoint_id = -1
-                    if right_lane_key in map_dict[road_key]:
-                      right_lane_waypoint_id = map_dict[road_key][right_lane_key]["waypoints"][i].id
-
-                    # Get left and right margins (aka markings)
-                    lm = lane["left_marking"][i]
-                    rm = lane["right_marking"][i]
-
-                    # Waypoint Orientation
-                    wo = lane["waypoints"][i].transform.rotation
-                    
-                    # Waypoint dict
-                    waypoint_dict = {
-                        "road_id" : road_key,
-                        "lane_id" : lane_key,
-                        "position" : [pos.x, pos.y, pos.z],
-                        "orientation": [wo.roll, wo.pitch, wo.yaw],
-                        "left_margin_position": [lm.x, lm.y, lm.z],
-                        "right_margin_position": [rm.x,rm.y,rm.z],
-                        "next_waypoints_ids": next_ids,
-                        "left_lane_waypoint_id": left_lane_waypoint_id,
-                        "right_lane_waypoint_id": right_lane_waypoint_id
-                    }
-                    map_data.waypoints_graph[map_dict[road_key][lane_key]["waypoints"][i].id] = waypoint_dict
         
         actors = carla_world.get_actors()
         stops = [actor for actor in actors if 'stop' in actor.type_id]
@@ -727,8 +584,6 @@ class MapImage(object):
         # Draw Crosswalks
         # draw_crosswalk(map_surface)
         
-        map_data.set_stop_signals(stops)
-
     def world_to_pixel(self, location, offset=(0, 0)):
         x = self.scale * self._pixels_per_meter * (location.x - self._world_offset[0])
         y = self.scale * self._pixels_per_meter * (location.y - self._world_offset[1])
@@ -939,15 +794,6 @@ class ModuleWorld(object):
         self.simulation_time = timestamp.elapsed_seconds
 
         vehicles, traffic_lights, speed_limits, walkers = self._split_actors()
-
-        # Update MapData
-        if self.hero_actor is not None:
-            map_data.update_hero_vehicle(self.town_map, self.hero_actor, self.hero_transform)
-        map_data.update_vehicles(vehicles)
-        map_data.update_traffic_lights(traffic_lights)
-        map_data.update_speed_limits(speed_limits)
-        map_data.update_walkers(walkers)
-        
 
     def _split_actors(self):
         vehicles = []
