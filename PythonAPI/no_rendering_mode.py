@@ -746,13 +746,14 @@ class MapImage(object):
 
 class ModuleWorld(object):
 
-    def __init__(self, name, host, port, timeout, actor_filter):
+    def __init__(self, name, host, port, timeout, actor_filter, no_rendering=True):
         self.client = None
         self.name = name
         self.host = host
         self.port = port
         self.timeout = timeout
         self.actor_filter = actor_filter
+        self.no_rendering = no_rendering
         self.server_fps = 0.0
         self.simulation_time = 0
 
@@ -803,6 +804,10 @@ class ModuleWorld(object):
 
     def start(self):
         self.world, self.town_map = self._get_data_from_carla(self.host, self.port, self.timeout)
+
+        settings = self.world.get_settings()
+        settings.no_rendering_mode = self.no_rendering
+        self.world.apply_settings(settings)
 
         # Create Surfaces
         self.map_image = MapImage(self.world, self.town_map, PIXELS_PER_METER)
@@ -1346,7 +1351,7 @@ def game_loop(args):
     # Init modules
     input_module = ModuleInput(MODULE_INPUT)
     hud_module = ModuleHUD(MODULE_HUD, args.width, args.height)
-    world_module = ModuleWorld(MODULE_WORLD, args.host, args.port, 2.0, args.filter)
+    world_module = ModuleWorld(MODULE_WORLD, args.host, args.port, 2.0, args.filter, args.no_rendering)
 
     # Register Modules
     module_manager.register_module(world_module)
@@ -1406,6 +1411,11 @@ def main():
         metavar='PATTERN',
         default='vehicle.*',
         help='actor filter (default: "vehicle.*")')
+    argparser.add_argument(
+        '--no-rendering',
+        type=bool,
+        default=False,
+        help='Switch off server rendering?')
 
     args = argparser.parse_args()
     args.description = argparser.description

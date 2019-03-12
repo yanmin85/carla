@@ -126,6 +126,8 @@
 - `apply_control(vehicle_control)`
 - `get_control()`
 - `set_autopilot(enabled=True)`
+- `get_physics_control()`
+- `apply_physics_control(vehicle_physics_control)`
 - `get_speed_limit()`
 - `get_traffic_light_state()`
 - `is_at_traffic_light()`
@@ -252,6 +254,7 @@
 - `get_waypoint(location, project_to_road=True)`
 - `get_topology()`
 - `generate_waypoints(distance)`
+- `transform_to_geolocation(location)`
 - `to_opendrive()`
 - `save_to_disk(path=self.name)`
 
