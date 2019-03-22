@@ -27,7 +27,9 @@ def get_libcarla_extensions():
                 yield os.path.join(root, filename)
 
     if os.name == "posix":
-        if platform.dist()[0].lower() in ["ubuntu", "debian", "deepin"]:
+        # @todo Replace deprecated method.
+        linux_distro = platform.dist()[0]  # pylint: disable=W1505
+        if linux_distro.lower() in ["ubuntu", "debian", "deepin"]:
             pwd = os.path.dirname(os.path.realpath(__file__))
             pylib = "libboost_python%d%d.a" % (sys.version_info.major,
                                                sys.version_info.minor)
@@ -38,8 +40,7 @@ def get_libcarla_extensions():
                 os.path.join(pwd, 'dependencies/lib', pylib)]
             extra_compile_args = [
                 '-fPIC', '-std=c++14', '-Wno-missing-braces',
-                '-DBOOST_ERROR_CODE_HEADER_ONLY', '-DLIBCARLA_WITH_PYTHON_SUPPORT',
-                '-DLIBCARLA_ENABLE_LIFETIME_PROFILER',
+                '-DBOOST_ERROR_CODE_HEADER_ONLY', '-DLIBCARLA_WITH_PYTHON_SUPPORT'
             ]
             if 'TRAVIS' in os.environ and os.environ['TRAVIS'] == 'true':
                 print('Travis CI build detected: disabling PNG support.')
