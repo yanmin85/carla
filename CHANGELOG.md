@@ -14,6 +14,7 @@
   * Fixed wheel's tire friction from physics control parameters.
   * Fixed cleanup of local_planner when used by other modules
   * Fixed Obstacle Detector
+  * Added 'is_invincible' (true/false) attribute to pedestrian.
 
 ## CARLA 0.9.4
 
