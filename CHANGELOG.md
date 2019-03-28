@@ -1,9 +1,21 @@
 ## Latest Changes
+
+  * Add --rolename to manual_control.py
+  * Migrate Content to AWS
+  * Adding a parser to represent the map as a connected graph of waypoints.
+  * Allow user to disable rendering and set the server timeout from the command line
+  * Add timestamp to SensorData
   * Added optional parameter to show more details about a recorder file (related to `show_recorder_file_info.py`)
   * Allow usage of hostname for carla::Client and resolve them to IP address
+  * Added `map.transform_to_geolocation` to transform Location to GNSS GeoLocation
+  * Added `id` property to waypoints, uniquely identifying waypoints up to half centimetre precision
+  * Added OpenDrive's road offset `s` as property to waypoints
   * Fixed python client DLL error on Windows
   * Added playback speed (slow/fast motion) for the replayer
   * We can use an absolute path for the recorded files (to choose where to 'write to' or 'read from')
+  * Fixed wheel's tire friction from physics control parameters.
+  * Fixed cleanup of local_planner when used by other modules
+
 
 ## CARLA 0.9.4
 
