@@ -1,4 +1,5 @@
 ## Latest Changes
+  * Added optional parameter to show more details about a recorder file (related to `show_recorder_file_info.py`)
   * Allow usage of hostname for carla::Client and resolve them to IP address
   * Fixed python client DLL error on Windows
   * Added playback speed (slow/fast motion) for the replayer
